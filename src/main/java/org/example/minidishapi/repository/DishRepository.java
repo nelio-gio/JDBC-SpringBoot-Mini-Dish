@@ -19,25 +19,52 @@ public class DishRepository {
         this.ingredientRepository = ingredientRepository;
     }
 
-    // findAll
-    public List<Dish> findAll() {
+    //findAll AVEC filtres optionnels
+    public List<Dish> findAllWithFilters(Double priceUnder, Double priceOver, String name) {
         List<Dish> dishes = new ArrayList<>();
-        String sql = "SELECT * FROM Dish ORDER BY id";
+        List<Object> params = new ArrayList<>();
+
+        StringBuilder sql = new StringBuilder("SELECT * FROM Dish WHERE 1=1");
+
+        if (priceUnder != null) {
+            sql.append(" AND selling_price < ?");
+            params.add(priceUnder);
+        }
+        if (priceOver != null) {
+            sql.append(" AND selling_price > ?");
+            params.add(priceOver);
+        }
+        if (name != null && !name.isBlank()) {
+            sql.append(" AND name ILIKE ?");
+            params.add("%" + name + "%");
+        }
+
+        sql.append(" ORDER BY id");
 
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
+             PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
 
-            while (rs.next()) {
-                Dish dish = mapDish(rs);
-                dish.setIngredients(findIngredientsByDishId(dish.getId()));
-                dishes.add(dish);
+            for (int i = 0; i < params.size(); i++) {
+                stmt.setObject(i + 1, params.get(i));
+            }
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Dish dish = mapDish(rs);
+                    dish.setIngredients(findIngredientsByDishId(dish.getId()));
+                    dishes.add(dish);
+                }
             }
 
         } catch (SQLException e) {
             throw new RuntimeException("Erreur lors de la recuperation des plats", e);
         }
         return dishes;
+    }
+
+    //findAll sans filtres (appelle findAllWithFilters avec null)
+    public List<Dish> findAll() {
+        return findAllWithFilters(null, null, null);
     }
 
     // findById
@@ -63,7 +90,65 @@ public class DishRepository {
         throw new RuntimeException("Dish.id=" + id + " is not found");
     }
 
-    // findByIngredientName
+    //createDishes (POST /dishes)
+    public List<Dish> createDishes(List<DishRequest> requests) {
+        // Vérifie les doublons de noms AVANT d'insérer
+        for (DishRequest request : requests) {
+            if (dishNameExists(request.getName())) {
+                throw new IllegalArgumentException(
+                        "Dish.name=" + request.getName() + " already exists");
+            }
+        }
+
+        List<Dish> createdDishes = new ArrayList<>();
+        String sql = "INSERT INTO Dish (name, dish_type, selling_price) " +
+                "VALUES (?, CAST(? AS dish_type), ?) RETURNING id";
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+
+            try {
+                for (DishRequest request : requests) {
+                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, request.getName());
+                        stmt.setString(2, request.getDishType().name());
+
+                        if (request.getSellingPrice() != null) {
+                            stmt.setDouble(3, request.getSellingPrice());
+                        } else {
+                            stmt.setNull(3, Types.NUMERIC);
+                        }
+
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            if (rs.next()) {
+                                int newId = rs.getInt("id");
+                                Dish created = new Dish(
+                                        newId,
+                                        request.getName(),
+                                        request.getDishType(),
+                                        request.getSellingPrice()
+                                );
+                                created.setIngredients(new ArrayList<>());
+                                createdDishes.add(created);
+                            }
+                        }
+                    }
+                }
+
+                conn.commit();
+
+            } catch (SQLException e) {
+                conn.rollback();
+                throw new RuntimeException("Erreur lors de la creation des plats", e);
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Erreur de connexion", e);
+        }
+        return createdDishes;
+    }
+
+    //findByIngredientName
     public List<Dish> findByIngredientName(String ingredientName) {
         List<Dish> dishes = new ArrayList<>();
         String sql =
@@ -109,7 +194,6 @@ public class DishRepository {
                         } else {
                             stmt.setNull(3, Types.NUMERIC);
                         }
-
                         try (ResultSet rs = stmt.executeQuery()) {
                             if (rs.next()) {
                                 dish.setId(rs.getInt("id"));
@@ -137,7 +221,6 @@ public class DishRepository {
                     }
                 }
 
-                // Remplace toutes les associations DishIngredient
                 String deleteSql = "DELETE FROM DishIngredient WHERE id_dish = ?";
                 try (PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
                     stmt.setInt(1, dish.getId());
@@ -169,9 +252,9 @@ public class DishRepository {
         return findById(dish.getId());
     }
 
-    // updateIngredients (pour PUT /dishes/{id}/ingredients)
+    // updateIngredients
     public Dish updateIngredients(Integer dishId, List<Integer> ingredientIds) {
-        findById(dishId); // Lance exception si non trouvé
+        findById(dishId);
 
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
@@ -210,7 +293,28 @@ public class DishRepository {
         return findById(dishId);
     }
 
-    // findIngredientsByDishId (usage interne)
+    //dishNameExists (usage interne)
+    private boolean dishNameExists(String name) {
+        String sql = "SELECT COUNT(*) FROM Dish WHERE LOWER(name) = LOWER(?)";
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, name);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Erreur lors de la verification du nom", e);
+        }
+        return false;
+    }
+
+    //findIngredientsByDishId (usage interne)
     private List<DishIngredient> findIngredientsByDishId(Integer dishId) {
         List<DishIngredient> list = new ArrayList<>();
         String sql =
