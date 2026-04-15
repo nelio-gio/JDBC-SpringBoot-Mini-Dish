@@ -144,3 +144,295 @@ paths:
                 type: string
               example: "Ingredient.id=1 is not found"
 
+
+  # DISHES
+
+  /dishes:
+    get:
+      tags:
+        - Dishes
+      summary: Recuperer la liste des plats avec filtres optionnels
+      description: >
+        Retourne la liste des plats enregistres dans la base de donnees.
+        Les parametres de filtre sont tous optionnels.
+        Si priceUnder est fourni, seuls les plats avec un prix inferieur sont retournes.
+        Si priceOver est fourni, seuls les plats avec un prix superieur sont retournes.
+        Si name est fourni, seuls les plats dont le nom contient la valeur sont retournes.
+      operationId: getAllDishes
+      parameters:
+        - name: priceUnder
+          in: query
+          required: false
+          description: Filtre les plats dont le prix de vente est inferieur a cette valeur
+          schema:
+            type: number
+            format: double
+            example: 5000.0
+        - name: priceOver
+          in: query
+          required: false
+          description: Filtre les plats dont le prix de vente est superieur a cette valeur
+          schema:
+            type: number
+            format: double
+            example: 3000.0
+        - name: name
+          in: query
+          required: false
+          description: Filtre les plats dont le nom contient cette chaine de caracteres (insensible a la casse)
+          schema:
+            type: string
+            example: salade
+      responses:
+        "200":
+          description: Liste des plats recuperee avec succes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Dish"
+              example:
+                - id: 1
+                  name: Salade fraiche
+                  dishType: START
+                  sellingPrice: 3500.0
+                  ingredients:
+                    - id: 1
+                      name: Laitue
+                      category: VEGETABLE
+                      price: 800.0
+
+    post:
+      tags:
+        - Dishes
+      summary: Creer une liste de plats
+      description: >
+        Permet de creer une liste de plats. Chaque element de la liste doit contenir
+        uniquement le nom, la categorie et le prix de vente du plat (pas d'identifiant).
+        Retourne 201 avec la liste des plats crees (avec leurs identifiants).
+        Retourne 400 si le nom d'un plat existe deja.
+        Retourne 500 en cas d'erreur interne.
+      operationId: createDishes
+      requestBody:
+        required: true
+        description: Liste des plats a creer
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/DishRequest"
+            example:
+              - name: Soupe de legumes
+                dishType: START
+                sellingPrice: 5000.0
+              - name: Tarte aux pommes
+                dishType: DESSERT
+                sellingPrice: 4500.0
+      responses:
+        "201":
+          description: Plats crees avec succes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Dish"
+              example:
+                - id: 6
+                  name: Soupe de legumes
+                  dishType: START
+                  sellingPrice: 5000.0
+                  ingredients: []
+        "400":
+          description: Le nom du plat existe deja
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Dish.name=Salade fraiche already exists"
+        "500":
+          description: Erreur interne du serveur
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Erreur lors de la creation des plats"
+
+  /dishes/{id}/ingredients:
+    put:
+      tags:
+        - Dishes
+      summary: Associer ou dissocier des ingredients d'un plat
+      description: >
+        Permet de modifier la liste des ingredients associes au plat ayant l'identifiant {id}.
+        Le corps de la requete est obligatoire et doit contenir la liste des identifiants
+        des ingredients a associer. Les ingredients inexistants en base sont ignores.
+        Retourne 404 si le plat n'est pas trouve.
+        Retourne 400 si le corps est vide ou manquant.
+      operationId: updateDishIngredients
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifiant unique du plat
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        description: Liste des ingredients a associer au plat
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/IngredientRef"
+            example:
+              - id: 1
+              - id: 3
+      responses:
+        "200":
+          description: Ingredients du plat mis a jour avec succes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dish"
+        "400":
+          description: Corps de requete vide ou invalide
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Le corps de la requete est obligatoire et ne doit pas etre vide."
+        "404":
+          description: Plat non trouve
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Dish.id=999 is not found"
+
+
+# COMPOSANTS REUTILISABLES
+
+components:
+  schemas:
+
+    Ingredient:
+      type: object
+      description: Representation d'un ingredient
+      properties:
+        id:
+          type: integer
+          description: Identifiant unique de l'ingredient
+          example: 1
+        name:
+          type: string
+          description: Nom de l'ingredient
+          example: Laitue
+        category:
+          type: string
+          description: Categorie de l'ingredient
+          enum:
+            - VEGETABLE
+            - ANIMAL
+            - MARINE
+            - DAIRY
+            - OTHER
+          example: VEGETABLE
+        price:
+          type: number
+          format: double
+          description: Prix unitaire de l'ingredient
+          example: 800.0
+
+    StockValue:
+      type: object
+      description: Valeur de stock d'un ingredient a un instant donne
+      properties:
+        unit:
+          type: string
+          description: Unite de la quantite
+          enum:
+            - PCS
+            - KG
+            - L
+          example: KG
+        value:
+          type: number
+          format: double
+          description: Quantite en stock
+          example: 4.8
+
+    DishRequest:
+      type: object
+      description: >
+        Objet de creation d'un plat. Distinct de Dish car il ne contient pas
+        d'identifiant unique ni de liste d'ingredients.
+      required:
+        - name
+        - dishType
+      properties:
+        name:
+          type: string
+          description: Nom du plat
+          example: Soupe de legumes
+        dishType:
+          type: string
+          description: Type du plat
+          enum:
+            - START
+            - MAIN
+            - DESSERT
+          example: START
+        sellingPrice:
+          type: number
+          format: double
+          nullable: true
+          description: Prix de vente du plat (optionnel)
+          example: 5000.0
+
+    Dish:
+      type: object
+      description: Representation complete d'un plat avec ses ingredients
+      properties:
+        id:
+          type: integer
+          description: Identifiant unique du plat
+          example: 1
+        name:
+          type: string
+          description: Nom du plat
+          example: Salade fraiche
+        dishType:
+          type: string
+          description: Type du plat
+          enum:
+            - START
+            - MAIN
+            - DESSERT
+          example: START
+        sellingPrice:
+          type: number
+          format: double
+          nullable: true
+          description: Prix de vente du plat
+          example: 3500.0
+        ingredients:
+          type: array
+          description: Liste des ingredients composant le plat
+          items:
+            $ref: "#/components/schemas/Ingredient"
+
+    IngredientRef:
+      type: object
+      description: Reference a un ingredient existant (uniquement son identifiant)
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+          description: Identifiant unique de l'ingredient
+          example: 1
