@@ -1,0 +1,146 @@
+openapi: 3.0.3
+
+info:
+  title: Mini Dish API
+  description: API REST de gestion des ingredients et des plats - TD5 PROG3 HEI
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Serveur local de developpement
+
+tags:
+  - name: Ingredients
+    description: Operations sur les ingredients
+  - name: Dishes
+    description: Operations sur les plats
+
+paths:
+
+
+  # INGREDIENTS
+
+  /ingredients:
+    get:
+      tags:
+        - Ingredients
+      summary: Recuperer tous les ingredients
+      description: Retourne la liste de tous les ingredients enregistres dans la base de donnees.
+      operationId: getAllIngredients
+      responses:
+        "200":
+          description: Liste des ingredients recuperee avec succes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ingredient"
+              example:
+                - id: 1
+                  name: Laitue
+                  category: VEGETABLE
+                  price: 800.0
+                - id: 2
+                  name: Tomate
+                  category: VEGETABLE
+                  price: 600.0
+
+  /ingredients/{id}:
+    get:
+      tags:
+        - Ingredients
+      summary: Recuperer un ingredient par son identifiant
+      description: Retourne un ingredient en fonction de son identifiant unique. Retourne 404 si non trouve.
+      operationId: getIngredientById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifiant unique de l'ingredient
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Ingredient trouve et retourne avec succes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ingredient"
+              example:
+                id: 1
+                name: Laitue
+                category: VEGETABLE
+                price: 800.0
+        "404":
+          description: Ingredient non trouve
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Ingredient.id=1 is not found"
+
+  /ingredients/{id}/stock:
+    get:
+      tags:
+        - Ingredients
+      summary: Recuperer la valeur de stock d'un ingredient a un instant donne
+      description: >
+        Retourne la valeur de stock de l'ingredient portant l'identifiant fourni
+        a travers {id}, a un instant precis fourni par le parametre "at".
+        Les parametres "at" et "unit" sont obligatoires.
+        Retourne 400 si un parametre est manquant, 404 si l'ingredient n'existe pas.
+      operationId: getIngredientStock
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifiant unique de l'ingredient
+          schema:
+            type: integer
+            example: 1
+        - name: at
+          in: query
+          required: true
+          description: Instant temporel au format ISO 8601 (ex. 2024-01-06T12:00:00Z)
+          schema:
+            type: string
+            format: date-time
+            example: "2024-01-06T12:00:00Z"
+        - name: unit
+          in: query
+          required: true
+          description: Unite de la valeur de stock
+          schema:
+            type: string
+            enum:
+              - PCS
+              - KG
+              - L
+            example: KG
+      responses:
+        "200":
+          description: Valeur de stock retournee avec succes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockValue"
+              example:
+                unit: KG
+                value: 4.8
+        "400":
+          description: Parametre obligatoire manquant
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Either mandatory query parameter `at` or `unit` is not provided."
+        "404":
+          description: Ingredient non trouve
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Ingredient.id=1 is not found"
+
